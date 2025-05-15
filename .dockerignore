@@ -1,0 +1,27 @@
+# Maven build files
+target/
+!target/*.jar
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.settings/
+.classpath
+.project
+
+# Build and system files
+.git/
+.gitignore
+.DS_Store
+*.md
+!README.md
+mvnw
+mvnw.cmd
+.mvn/
+
+# Logs
+logs/
+*.log
