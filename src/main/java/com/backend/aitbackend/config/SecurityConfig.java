@@ -4,10 +4,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Configuration
 public class SecurityConfig {
@@ -38,6 +41,24 @@ public class SecurityConfig {
                         .allowedHeaders("*");
             }
         };
+    }
+    
+    /**
+     * Register the JWT authentication filter for all API paths
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilter(JwtAuthenticationFilter filter) {
+        FilterRegistrationBean<JwtAuthenticationFilter> registrationBean = new FilterRegistrationBean<>();
+        registrationBean.setFilter(filter);
+        registrationBean.addUrlPatterns("/api/*");
+        return registrationBean;
+    }
+      /**
+     * Create a shared ObjectMapper for JSON serialization/deserialization
+     */
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 
     /**

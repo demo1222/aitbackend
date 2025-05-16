@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .panel {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input, button {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+        #output {
+            white-space: pre-wrap;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>JWT Authentication Test</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Register</h2>
+            <input type="text" id="regUsername" placeholder="Username">
+            <input type="email" id="regEmail" placeholder="Email">
+            <input type="password" id="regPassword" placeholder="Password">
+            <button id="registerBtn">Register</button>
+        </div>
+        
+        <div class="panel">
+            <h2>Login</h2>
+            <input type="text" id="loginUsername" placeholder="Username">
+            <input type="password" id="loginPassword" placeholder="Password">
+            <button id="loginBtn">Login</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Token Actions</h2>
+            <button id="validateTokenBtn">Validate Token</button>
+            <button id="refreshTokenBtn">Refresh Token</button>
+            <button id="clearTokensBtn">Clear Tokens</button>
+        </div>
+    </div>
+    
+    <h2>Output</h2>
+    <div id="output"></div>
+    
+    <script>
+        // Base URL for API
+        const API_BASE_URL = 'http://localhost:8081';
+        
+        // DOM Elements
+        const outputEl = document.getElementById('output');
+        
+        // Token Storage
+        let accessToken = localStorage.getItem('accessToken') || null;
+        let refreshToken = localStorage.getItem('refreshToken') || null;
+        
+        // Helper function to show output
+        function showOutput(message, isError = false) {
+            const timestamp = new Date().toLocaleTimeString();
+            outputEl.innerHTML += `[${timestamp}] ${isError ? '❌ ERROR: ' : '✅ '} ${message}\n\n`;
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+        
+        // Helper function for API calls
+        async function apiCall(endpoint, method, body = null, useAuth = false) {
+            try {
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                
+                if (useAuth && accessToken) {
+                    headers['Authorization'] = `Bearer ${accessToken}`;
+                }
+                
+                const options = {
+                    method,
+                    headers
+                };
+                
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Request failed');
+                }
+                
+                return data;
+            } catch (error) {
+                showOutput(error.message, true);
+                throw error;
+            }
+        }
+        
+        // Register function
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            
+            if (!username || !email || !password) {
+                showOutput('Please fill all register fields', true);
+                return;
+            }
+            
+            try {
+                const data = await apiCall('/auth/register', 'POST', {
+                    username,
+                    email,
+                    password
+                });
+                
+                showOutput(`Registration successful: ${data.message}`);
+                document.getElementById('loginUsername').value = username;
+            } catch (error) {
+                // Error already shown in apiCall
+            }
+        }
+        
+        // Login function
+        async function login() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!username || !password) {
+                showOutput('Please fill all login fields', true);
+                return;
+            }
+            
+            try {
+                const data = await apiCall('/auth/login', 'POST', {
+                    username,
+                    password
+                });
+                
+                // Store tokens
+                accessToken = data.accessToken;
+                refreshToken = data.refreshToken;
+                localStorage.setItem('accessToken', accessToken);
+                localStorage.setItem('refreshToken', refreshToken);
+                
+                showOutput(`Login successful: ${data.message}`);
+                showOutput(`User: ${data.username} (${data.email})`);
+            } catch (error) {
+                // Error already shown in apiCall
+            }
+        }
+        
+        // Validate Token function
+        async function validateToken() {
+            if (!accessToken) {
+                showOutput('No access token available. Please login.', true);
+                return;
+            }
+            
+            try {
+                const data = await apiCall('/auth/validate-token', 'POST', { token: accessToken });
+                
+                if (data.valid) {
+                    showOutput(`Token is valid. Username: ${data.username}`);
+                } else {
+                    showOutput('Token is invalid or expired', true);
+                    accessToken = null;
+                    localStorage.removeItem('accessToken');
+                }
+            } catch (error) {
+                // Error already shown in apiCall
+            }
+        }
+        
+        // Refresh Token function
+        async function refreshTokenFunc() {
+            if (!refreshToken) {
+                showOutput('No refresh token available. Please login.', true);
+                return;
+            }
+            
+            try {
+                const data = await apiCall('/auth/refresh-token', 'POST', { refreshToken });
+                
+                // Update tokens
+                accessToken = data.accessToken;
+                refreshToken = data.refreshToken;
+                localStorage.setItem('accessToken', accessToken);
+                localStorage.setItem('refreshToken', refreshToken);
+                
+                showOutput(`Token refresh successful: ${data.message}`);
+            } catch (error) {
+                // Error already shown in apiCall
+                refreshToken = null;
+                localStorage.removeItem('refreshToken');
+            }
+        }
+        
+        // Clear tokens function
+        function clearTokens() {
+            accessToken = null;
+            refreshToken = null;
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            showOutput('Tokens cleared');
+        }
+        
+        // Event listeners
+        document.getElementById('registerBtn').addEventListener('click', register);
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.getElementById('validateTokenBtn').addEventListener('click', validateToken);
+        document.getElementById('refreshTokenBtn').addEventListener('click', refreshTokenFunc);
+        document.getElementById('clearTokensBtn').addEventListener('click', clearTokens);
+        
+        // Show initial token status
+        if (accessToken) {
+            showOutput('Access token is available from previous session');
+        }
+        if (refreshToken) {
+            showOutput('Refresh token is available from previous session');
+        }
+    </script>
+</body>
+</html>

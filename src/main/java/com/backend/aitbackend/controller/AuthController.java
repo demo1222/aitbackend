@@ -1,5 +1,7 @@
 package com.backend.aitbackend.controller;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
@@ -9,8 +11,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.backend.aitbackend.dto.LoginRequest;
+import com.backend.aitbackend.dto.LoginResponse;
 import com.backend.aitbackend.dto.RegisterRequest;
 import com.backend.aitbackend.dto.RegisterResponse;
+import com.backend.aitbackend.dto.TokenRefreshRequest;
+import com.backend.aitbackend.dto.TokenRefreshResponse;
 import com.backend.aitbackend.model.User;
 import com.backend.aitbackend.service.UserService;
 
@@ -88,6 +94,138 @@ public class AuthController {
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new RegisterResponse(null, null, null, "Registration failed: " + e.getMessage()));
+        }
+    }
+      @PostMapping("/login")
+    public ResponseEntity<?> loginUser(@RequestBody LoginRequest loginRequest) {
+        // Validate request
+        if (loginRequest.getUsername() == null || loginRequest.getUsername().trim().isEmpty()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new LoginResponse(null, null, null, null, null, "Username cannot be empty!"));
+        }
+        
+        if (loginRequest.getPassword() == null || loginRequest.getPassword().trim().isEmpty()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new LoginResponse(null, null, null, null, null, "Password cannot be empty!"));
+        }
+        
+        try {
+            // Check if user exists
+            if (!userService.userExists(loginRequest.getUsername())) {
+                return ResponseEntity
+                        .status(HttpStatus.UNAUTHORIZED)
+                        .body(new LoginResponse(null, null, null, null, null, "Invalid username or password!"));
+            }
+            
+            // Validate user credentials
+            if (userService.validateUserCredentials(loginRequest.getUsername(), loginRequest.getPassword())) {
+                // Get user details
+                Optional<User> userOptional = userService.findByUsername(loginRequest.getUsername());
+                
+                if (userOptional.isPresent()) {
+                    User user = userOptional.get();
+                    
+                    // Generate tokens
+                    String accessToken = userService.generateAccessToken(user.getUsername());
+                    String refreshToken = userService.generateRefreshToken(user.getUsername());
+                    
+                    // Return successful response
+                    LoginResponse response = new LoginResponse(
+                            accessToken,
+                            refreshToken,
+                            user.getId(),
+                            user.getUsername(),
+                            user.getEmail(),
+                            "Login successful!");
+                    
+                    return ResponseEntity.ok(response);
+                }
+            }
+            
+            // If we reach here, login failed
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(new LoginResponse(null, null, null, null, null, "Invalid username or password!"));
+            
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new LoginResponse(null, null, null, null, null, "Login failed: " + e.getMessage()));
+        }
+    }
+      @PostMapping("/refresh-token")
+    public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
+        // Validate request
+        if (request.getRefreshToken() == null || request.getRefreshToken().trim().isEmpty()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new TokenRefreshResponse(null, null, "Refresh token cannot be empty!"));
+        }
+        
+        try {
+            // Validate refresh token
+            if (userService.validateRefreshToken(request.getRefreshToken())) {
+                // Extract username from the refresh token
+                String username = userService.getUsernameFromRefreshToken(request.getRefreshToken());
+                
+                // Generate new tokens
+                String newAccessToken = userService.generateAccessToken(username);
+                String newRefreshToken = userService.generateRefreshToken(username);
+                
+                // Return successful response
+                return ResponseEntity.ok(new TokenRefreshResponse(
+                        newAccessToken,
+                        newRefreshToken,
+                        "Token refresh successful!"));
+            }
+            
+            // If we reach here, token refresh failed
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(new TokenRefreshResponse(null, null, "Invalid refresh token!"));
+            
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new TokenRefreshResponse(null, null, "Token refresh failed: " + e.getMessage()));
+        }
+    }
+    
+    @PostMapping("/validate-token")
+    public ResponseEntity<?> validateToken(@RequestBody Map<String, String> request) {
+        String token = request.get("token");
+        
+        // Validate request
+        if (token == null || token.trim().isEmpty()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("valid", false, "message", "Token cannot be empty!"));
+        }
+        
+        try {
+            // Validate access token
+            boolean isValid = userService.validateAccessToken(token);
+            
+            if (isValid) {
+                String username = userService.getUsernameFromAccessToken(token);
+                return ResponseEntity.ok(Map.of(
+                        "valid", true, 
+                        "username", username, 
+                        "message", "Token is valid!"));
+            } else {
+                return ResponseEntity.ok(Map.of(
+                        "valid", false, 
+                        "message", "Token is invalid or expired!"));
+            }
+            
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "valid", false, 
+                            "message", "Token validation failed: " + e.getMessage()));
         }
     }
 }
