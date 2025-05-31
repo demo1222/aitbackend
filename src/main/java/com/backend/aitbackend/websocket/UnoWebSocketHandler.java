@@ -363,8 +363,7 @@ public class UnoWebSocketHandler implements WebSocketHandler {
             
             // Play the card
             UnoGameState.GamePlayResult result = gameService.playCard(room.getId(), playerId, playMessage.getCard(), playMessage.getDeclaredColor());
-            
-            if (result.isSuccess()) {                // Broadcast card played to all players in room
+              if (result.isSuccess()) {                // Broadcast card played to all players in room
                 CardPlayedMessage cardPlayedMsg = new CardPlayedMessage();
                 cardPlayedMsg.setRoomId(room.getId());
                 cardPlayedMsg.setPlayerId(playerId);
@@ -372,6 +371,12 @@ public class UnoWebSocketHandler implements WebSocketHandler {
                 cardPlayedMsg.setPlayedCard(playMessage.getCard());
                 cardPlayedMsg.setDeclaredColor(gameState.getDeclaredColor());
                 cardPlayedMsg.setNextPlayerId(gameState.getCurrentPlayerId());
+                cardPlayedMsg.setSkipNextPlayer(result.isSkipNextPlayer());
+                cardPlayedMsg.setDirectionReversed(result.isDirectionReversed());
+                cardPlayedMsg.setCardsToDrawNext(result.getCardsToDrawNext());
+                cardPlayedMsg.setPlayerHasUno(result.isPlayerHasUno());
+                cardPlayedMsg.setGameWon(result.isGameWon());
+                cardPlayedMsg.setWinnerId(result.getWinnerId());
                 broadcastToRoom(room.getId(), cardPlayedMsg, null);
                 
                 // Broadcast updated game state

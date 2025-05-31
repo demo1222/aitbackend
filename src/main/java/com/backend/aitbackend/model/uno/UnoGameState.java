@@ -63,38 +63,29 @@ public class UnoGameState {
         discardPile.add(firstCard);
         topCard = firstCard;
         declaredColor = firstCard.getColor();
-        
-        // Handle special first card
+          // Handle special first card
         if (firstCard.getType() == UnoCard.Type.SKIP) {
             nextPlayer(); // Skip first player
         } else if (firstCard.getType() == UnoCard.Type.REVERSE && playerOrder.size() == 2) {
             nextPlayer(); // In 2-player game, reverse acts like skip
         } else if (firstCard.getType() == UnoCard.Type.DRAW_TWO) {
-            cardsToDrawNext = 2;
+            // First player draws 2 cards and their turn is skipped
+            String firstPlayerId = playerOrder.get(0);
+            ensureDeckHasCards(2);
+            List<UnoCard> drawnCards = deck.drawCards(2);
+            playerHands.get(firstPlayerId).addAll(drawnCards);
+            nextPlayer(); // Skip the first player's turn
         }
         
         currentPlayerIndex = 0;
         gameActive = true;
-    }
-
-    public boolean canPlayCard(String playerId, UnoCard card) {
+    }    public boolean canPlayCard(String playerId, UnoCard card) {
         if (!gameActive || !isCurrentPlayer(playerId)) {
             return false;
         }
         
         List<UnoCard> playerHand = playerHands.get(playerId);
         if (!playerHand.contains(card)) {
-            return false;
-        }
-        
-        // If player must draw cards, they can only play a matching draw card
-        if (cardsToDrawNext > 0) {
-            if (card.getType() == UnoCard.Type.DRAW_TWO && topCard.getType() == UnoCard.Type.DRAW_TWO) {
-                return true;
-            }
-            if (card.getType() == UnoCard.Type.WILD_DRAW_FOUR && topCard.getType() == UnoCard.Type.WILD_DRAW_FOUR) {
-                return true;
-            }
             return false;
         }
         
@@ -136,47 +127,61 @@ public class UnoGameState {
             result.setWinnerId(playerId);
             return result;
         }
-        
-        // Handle card effects
+          // Handle card effects
         handleCardEffect(card, result);
         
-        // Move to next player if no special action occurred
-        if (!result.isSkipNextPlayer() && cardsToDrawNext == 0) {
+        // For regular cards (non-action cards), move to next player
+        if (!card.isActionCard()) {
             nextPlayer();
         }
         
         return result;
-    }
-
-    private void handleCardEffect(UnoCard card, GamePlayResult result) {
+    }    private void handleCardEffect(UnoCard card, GamePlayResult result) {
         switch (card.getType()) {
             case SKIP:
-                nextPlayer();
+                // Skip the next player's turn
+                nextPlayer(); // Move to the next player
+                nextPlayer(); // Skip their turn by moving to the player after them
                 result.setSkipNextPlayer(true);
                 break;
             case REVERSE:
                 if (playerOrder.size() == 2) {
                     // In 2-player game, reverse acts like skip
-                    nextPlayer();
+                    nextPlayer(); // Move to the next player  
+                    nextPlayer(); // Skip their turn
                     result.setSkipNextPlayer(true);
                 } else {
                     direction = (direction == Direction.CLOCKWISE) ? 
                                Direction.COUNTERCLOCKWISE : Direction.CLOCKWISE;
                     result.setDirectionReversed(true);
+                    nextPlayer(); // Move to next player in the new direction
                 }
+                break;            case DRAW_TWO:
+                nextPlayer(); // Move to the next player
+                // Force the next player to draw 2 cards
+                String nextPlayerId = getCurrentPlayerId();
+                ensureDeckHasCards(2);
+                List<UnoCard> drawnCards = deck.drawCards(2);
+                playerHands.get(nextPlayerId).addAll(drawnCards);
+                // Move to the player after the one who drew cards (skip their turn)
+                nextPlayer();
+                result.setCardsToDrawNext(2); // For UI notification
+                break;            case WILD_DRAW_FOUR:
+                nextPlayer(); // Move to the next player
+                // Force the next player to draw 4 cards
+                String nextPlayerIdWild = getCurrentPlayerId();
+                ensureDeckHasCards(4);
+                List<UnoCard> drawnCardsWild = deck.drawCards(4);
+                playerHands.get(nextPlayerIdWild).addAll(drawnCardsWild);
+                // Move to the player after the one who drew cards (skip their turn)
+                nextPlayer();
+                result.setCardsToDrawNext(4); // For UI notification
                 break;
-            case DRAW_TWO:
-                cardsToDrawNext += 2;
-                result.setCardsToDrawNext(cardsToDrawNext);
-                break;
-            case WILD_DRAW_FOUR:
-                cardsToDrawNext += 4;
-                result.setCardsToDrawNext(cardsToDrawNext);
+            default:
+                // No special effect for number cards and wild cards
                 break;
         }
-    }
-
-    public DrawResult drawCards(String playerId, int count) {
+    }    public DrawResult drawCards(String playerId, int count) {
         if (!isCurrentPlayer(playerId)) {
             return new DrawResult(false, "Not your turn", Collections.emptyList());
         }
@@ -187,10 +192,7 @@ public class UnoGameState {
         List<UnoCard> drawnCards = deck.drawCards(count);
         playerHands.get(playerId).addAll(drawnCards);
         
-        // Reset cards to draw
-        cardsToDrawNext = 0;
-        
-        // Move to next player
+        // Move to next player after drawing
         nextPlayer();
         
         return new DrawResult(true, "Cards drawn", drawnCards);
@@ -251,6 +253,14 @@ public class UnoGameState {
 
     public List<UnoCard> getPlayerHand(String playerId) {
         return new ArrayList<>(playerHands.getOrDefault(playerId, Collections.emptyList()));
+    }
+
+    // Method to add card to player's hand (useful for testing)
+    public void addCardToPlayerHand(String playerId, UnoCard card) {
+        List<UnoCard> playerHand = playerHands.get(playerId);
+        if (playerHand != null) {
+            playerHand.add(card);
+        }
     }
 
     public int getPlayerHandSize(String playerId) {
