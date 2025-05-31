@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNO Game WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        
+        input, button, select {
+            padding: 8px 12px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .message-log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .room-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        
+        .player-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>UNO Game WebSocket Test Client</h1>
+    
+    <div class="container">
+        <h2>Connection Status</h2>
+        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+        <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div class="grid">
+        <div class="container">
+            <h2>Player Information</h2>
+            <div id="playerInfo" class="player-info">
+                <p><strong>Player ID:</strong> <span id="playerId">Not assigned</span></p>
+                <p><strong>Current Room:</strong> <span id="currentRoom">None</span></p>
+                <p><strong>Ready Status:</strong> <span id="readyStatus">Not ready</span></p>
+            </div>
+        </div>
+
+        <div class="container">
+            <h2>Room Actions</h2>
+            <div>
+                <h3>Create Room</h3>
+                <input type="text" id="playerName" placeholder="Your name" value="TestPlayer">
+                <input type="text" id="roomName" placeholder="Room name" value="Test Room">
+                <input type="number" id="maxPlayers" placeholder="Max players" value="4" min="2" max="8">
+                <label><input type="checkbox" id="isPrivate"> Private Room</label>
+                <br>
+                <button onclick="createRoom()" disabled id="createRoomBtn">Create Room</button>
+            </div>
+            
+            <div>
+                <h3>Join Room</h3>
+                <input type="text" id="joinPlayerName" placeholder="Your name" value="TestPlayer2">
+                <input type="text" id="roomId" placeholder="Room ID">
+                <button onclick="joinRoom()" disabled id="joinRoomBtn">Join Room</button>
+            </div>
+            
+            <div>
+                <button onclick="leaveRoom()" disabled id="leaveRoomBtn">Leave Room</button>
+                <button onclick="toggleReady()" disabled id="toggleReadyBtn">Toggle Ready</button>
+                <button onclick="startGame()" disabled id="startGameBtn">Start Game</button>
+                <button onclick="getRooms()" disabled id="getRoomsBtn">Refresh Rooms</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Available Rooms</h2>
+        <div id="roomsList">No rooms available</div>
+    </div>
+
+    <div class="container">
+        <h2>Message Log</h2>
+        <button onclick="clearLog()">Clear Log</button>
+        <div id="messageLog" class="message-log"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let playerId = null;
+        let currentRoomId = null;
+        let isRoomOwner = false;
+
+        function connect() {
+            const wsUrl = 'ws://localhost:8080/uno';
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(event) {
+                updateConnectionStatus(true);
+                logMessage('Connected to WebSocket server');
+                enableButtons(true);
+            };
+            
+            socket.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                logMessage('Received: ' + JSON.stringify(message, null, 2));
+                handleMessage(message);
+            };
+            
+            socket.onclose = function(event) {
+                updateConnectionStatus(false);
+                logMessage('Disconnected from WebSocket server');
+                enableButtons(false);
+                resetPlayerInfo();
+            };
+            
+            socket.onerror = function(error) {
+                logMessage('WebSocket error: ' + error);
+            };
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.close();
+            }
+        }
+
+        function createRoom() {
+            const message = {
+                type: 'CREATE_ROOM',
+                playerName: document.getElementById('playerName').value,
+                roomName: document.getElementById('roomName').value,
+                maxPlayers: parseInt(document.getElementById('maxPlayers').value),
+                isPrivate: document.getElementById('isPrivate').checked
+            };
+            sendMessage(message);
+        }
+
+        function joinRoom() {
+            const message = {
+                type: 'JOIN_ROOM',
+                playerName: document.getElementById('joinPlayerName').value,
+                roomId: document.getElementById('roomId').value
+            };
+            sendMessage(message);
+        }
+
+        function leaveRoom() {
+            if (playerId) {
+                const message = {
+                    type: 'LEAVE_ROOM',
+                    playerId: playerId
+                };
+                sendMessage(message);
+            }
+        }
+
+        function toggleReady() {
+            if (playerId) {
+                const message = {
+                    type: 'TOGGLE_READY',
+                    playerId: playerId
+                };
+                sendMessage(message);
+            }
+        }
+
+        function startGame() {
+            if (currentRoomId && isRoomOwner) {
+                const message = {
+                    type: 'START_GAME',
+                    roomId: currentRoomId
+                };
+                sendMessage(message);
+            }
+        }
+
+        function getRooms() {
+            const message = {
+                type: 'GET_ROOMS'
+            };
+            sendMessage(message);
+        }
+
+        function sendMessage(message) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(message));
+                logMessage('Sent: ' + JSON.stringify(message, null, 2));
+            } else {
+                logMessage('Cannot send message: WebSocket not connected');
+            }
+        }
+
+        function handleMessage(message) {
+            switch (message.type) {
+                case 'ROOM_CREATED':
+                    playerId = message.playerId;
+                    currentRoomId = message.room.id;
+                    isRoomOwner = true;
+                    updatePlayerInfo(message.room);
+                    updateRoomActionButtons();
+                    break;
+                    
+                case 'ROOM_JOINED':
+                    playerId = message.playerId;
+                    currentRoomId = message.room.id;
+                    isRoomOwner = message.room.owner === playerId;
+                    updatePlayerInfo(message.room);
+                    updateRoomActionButtons();
+                    break;
+                    
+                case 'ROOM_UPDATED':
+                    if (message.room.id === currentRoomId) {
+                        updatePlayerInfo(message.room);
+                    }
+                    break;
+                    
+                case 'PLAYER_LEFT':
+                    if (message.room.id === currentRoomId) {
+                        updatePlayerInfo(message.room);
+                    }
+                    break;
+                    
+                case 'ROOMS_LIST':
+                    updateRoomsList(message.rooms);
+                    break;
+                    
+                case 'GAME_STARTED':
+                    logMessage('Game started in room: ' + message.roomId);
+                    break;
+                    
+                case 'ERROR':
+                    logMessage('Error: ' + message.message);
+                    break;
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusDiv.textContent = 'Connected';
+                statusDiv.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function enableButtons(enabled) {
+            const buttons = ['createRoomBtn', 'joinRoomBtn', 'getRoomsBtn'];
+            buttons.forEach(btnId => {
+                document.getElementById(btnId).disabled = !enabled;
+            });
+        }
+
+        function updateRoomActionButtons() {
+            document.getElementById('leaveRoomBtn').disabled = !playerId;
+            document.getElementById('toggleReadyBtn').disabled = !playerId;
+            document.getElementById('startGameBtn').disabled = !(playerId && isRoomOwner);
+        }
+
+        function updatePlayerInfo(room) {
+            document.getElementById('playerId').textContent = playerId || 'Not assigned';
+            document.getElementById('currentRoom').textContent = room ? room.id : 'None';
+            
+            if (room && playerId) {
+                const player = room.players.find(p => p.id === playerId);
+                if (player) {
+                    document.getElementById('readyStatus').textContent = player.ready ? 'Ready' : 'Not ready';
+                }
+                isRoomOwner = room.owner === playerId;
+            } else {
+                document.getElementById('readyStatus').textContent = 'Not ready';
+            }
+            
+            updateRoomActionButtons();
+        }
+
+        function resetPlayerInfo() {
+            playerId = null;
+            currentRoomId = null;
+            isRoomOwner = false;
+            updatePlayerInfo(null);
+        }
+
+        function updateRoomsList(rooms) {
+            const roomsDiv = document.getElementById('roomsList');
+            if (rooms.length === 0) {
+                roomsDiv.innerHTML = 'No rooms available';
+                return;
+            }
+            
+            roomsDiv.innerHTML = rooms.map(room => `
+                <div class="room-item">
+                    <strong>${room.name}</strong> (ID: ${room.id})<br>
+                    Players: ${room.players.length}/${room.maxPlayers}<br>
+                    Owner: ${room.players.find(p => p.id === room.owner)?.name || 'Unknown'}<br>
+                    Status: ${room.gameStarted ? 'Game in progress' : 'Waiting'}<br>
+                    <button onclick="document.getElementById('roomId').value = '${room.id}'">Select</button>
+                </div>
+            `).join('');
+        }
+
+        function logMessage(message) {
+            const logDiv = document.getElementById('messageLog');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').innerHTML = '';
+        }
+
+        // Auto-connect on page load for convenience
+        window.onload = function() {
+            // Uncomment the next line to auto-connect
+            // connect();
+        };
+    </script>
+</body>
+</html>
